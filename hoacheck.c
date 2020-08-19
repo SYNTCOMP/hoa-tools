@@ -28,23 +28,23 @@
 #include "simplehoa.h"
 
 int main(int argc, char* argv[]) {
-    HoaData* data = malloc(sizeof(HoaData));
-    defaultsHoa(data);
-    int ret = parseHoa(stdin, data);
+    HoaData data;
+    defaultsHoa(&data);
+    int ret = parseHoa(stdin, &data);
 
     if (ret != 0)
         return ret;
     
     bool isMaxParity;
     short resGoodPriority;
-    ret = isParityGFG(data, &isMaxParity, &resGoodPriority);
+    ret = isParityGFG(&data, &isMaxParity, &resGoodPriority);
     if (ret != 0)
         return ret;
 
 #ifndef NDEBUG
-    printHoa(data);
+    printHoa(&data);
 #endif
 
-    deleteHoa(data);
+    resetHoa(&data);
     return EXIT_SUCCESS;
 }

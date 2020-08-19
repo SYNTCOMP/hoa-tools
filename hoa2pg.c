@@ -31,6 +31,18 @@
 // A simple data structure for a linked list of PGSolver vertex
 // entries
 
+typedef struct IntList {
+    int i;
+    struct IntList* next;
+} IntList;
+
+static IntList* prependIntNode(IntList* node, int val) {
+    IntList* newHead = (IntList*) malloc(sizeof(IntList));
+    newHead->i = val;
+    newHead->next = node;
+    return newHead;
+}
+
 typedef struct PGSVertices {
     int id;
     int owner;
@@ -93,7 +105,7 @@ static void printPGSVertices(PGSVertices* vlist) {
  * value is unknown (0). The valuation is expected as an unsigned
  * integer whose i-th bit is 1 iff the i-th AP in apIds is set to 1
  */
-static int evalLabel(BTree* label, AliasList* aliases, 
+static int evalLabel(BTree* label, Alias* aliases, int noAliases,
                       int numAPs, int* apIds, unsigned value) {
     assert(label != NULL);
     int left;
@@ -103,8 +115,10 @@ static int evalLabel(BTree* label, AliasList* aliases,
         case NT_BOOL:
             return label->id ? 1 : -1;  // 0 becomes -1 like this
         case NT_AND:
-            left = evalLabel(label->left, aliases, numAPs, apIds, value);
-            right = evalLabel(label->right, aliases, numAPs, apIds, value);
+            left = evalLabel(label->left, aliases, noAliases,
+                             numAPs, apIds, value);
+            right = evalLabel(label->right, aliases, noAliases,
+                              numAPs, apIds, value);
             if (left == -1 || right == -1)
                 return -1;
             if (left == 0 || right == 0)
@@ -112,8 +126,10 @@ static int evalLabel(BTree* label, AliasList* aliases,
             // otherwise
             return 1;
         case NT_OR:
-            left = evalLabel(label->left, aliases, numAPs, apIds, value);
-            right = evalLabel(label->right, aliases, numAPs, apIds, value);
+            left = evalLabel(label->left, aliases, noAliases,
+                             numAPs, apIds, value);
+            right = evalLabel(label->right, aliases, noAliases,
+                              numAPs, apIds, value);
             if (left == 1 || right == 1)
                 return 1;
             if (left == 0 || right == 0)
@@ -121,7 +137,8 @@ static int evalLabel(BTree* label, AliasList* aliases,
             // otherwise
             return -1;
         case NT_NOT:
-            return -1 * evalLabel(label->left, aliases, numAPs, apIds, value);
+            return -1 * evalLabel(label->left, aliases, noAliases,
+                                  numAPs, apIds, value);
         case NT_AP:
             mask = 1;
             for (int i = 0; i < numAPs; i++) {
@@ -132,9 +149,10 @@ static int evalLabel(BTree* label, AliasList* aliases,
             }
             return 0;
         case NT_ALIAS:
-            for (AliasList* a = aliases; a != NULL; a = a->next) {
-                if (strcmp(a->alias, label->alias) == 0)
-                    return evalLabel(a->labelExpr, aliases, numAPs, apIds, value);
+            for (int i = 0; i < noAliases; i++) {
+                if (strcmp(aliases[i].alias, label->alias) == 0)
+                    return evalLabel(aliases[i].labelExpr, aliases, noAliases,
+                                     numAPs, apIds, value);
             }
             break;
         default:
@@ -145,27 +163,27 @@ static int evalLabel(BTree* label, AliasList* aliases,
 
 /* Adjust the priorities since we have to make sure we output a max, even
  * parity game and that the priorities of player-0 vertices are useless
- * (that is, irrelevant). This assumes maxPriority is true iff the original
- * objective is max and winRes = 0 if even, otherwise it is 1 if odd.
+ * (that is, irrelevant). This assumes isMaxParity is true iff the original
+ * objective is max and resGoodPriority = 0 if even, otherwise it is 1 if odd.
  */
-static inline int adjustPriority(int p, bool maxPriority, short winRes,
+static inline int adjustPriority(int p, bool isMaxParity, short resGoodPriority,
                                  int noPriorities) {
     // To deal with max vs min, we subtract from noPriorities if
     // originally it was min (for this we need it to be even!)
     int evenMax = noPriorities;
     if (evenMax % 2 != 0)
         evenMax += 1;
-    int pForMax = maxPriority ? p : evenMax - p;
+    int pForMax = isMaxParity ? p : evenMax - p;
     // The plan is to use 0 as the priority for player-0 vertices,
     // this means shifting everything up; we take the opportunity
     // to make odd priorities even if the original objective asked
     // for odd ones
-    int shifted = pForMax + (2 - winRes);
+    int shifted = pForMax + (2 - resGoodPriority);
 #ifndef NDEBUG
     fprintf(stderr, "Changed %d into %d. Original objective: %s %s with "
                     "maximal priority %d\n", p, shifted,
-                    (maxPriority ? "max" : "min"),
-                    (winRes == 0 ? "even" : "odd"),
+                    (isMaxParity ? "max" : "min"),
+                    (resGoodPriority == 0 ? "even" : "odd"),
                     noPriorities);
 #endif
     return shifted;
@@ -176,93 +194,28 @@ static inline int adjustPriority(int p, bool maxPriority, short winRes,
  * dump it as a PGSolver game
  */
 int main(int argc, char* argv[]) {
-    HoaData* data = malloc(sizeof(HoaData));
-    defaultsHoa(data);
-    int ret = parseHoa(stdin, data);
+    HoaData data;
+    defaultsHoa(&data);
+    int ret = parseHoa(stdin, &data);
     // 0 means everything was parsed correctly
     if (ret != 0)
         return ret;
-    // A few semantic checks! TODO: use checkParityGFG function instead
-    // (1) the automaton should be a parity one
-    if (strcmp(data->accNameID, "parity") != 0) {
-        fprintf(stderr, "Expected \"parity...\" automaton, found \"%s\" "
-                        "as automaton type\n", data->accNameID);
-        return 100;
-    }
-    bool foundOrd = false;
-    bool maxPriority;
-    bool foundRes = false;
-    short winRes;
-    for (StringList* param = data->accNameParameters; param != NULL;
-            param = param->next) {
-        if (strcmp(param->str, "max") == 0) {
-            maxPriority = true;
-            foundOrd = true;
-        }
-        if (strcmp(param->str, "min") == 0) {
-            maxPriority = false;
-            foundOrd = true;
-        }
-        if (strcmp(param->str, "even") == 0) {
-            winRes = 0;
-            foundRes = true;
-        }
-        if (strcmp(param->str, "odd") == 0) {
-            winRes = 1;
-            foundRes = true;
-        }
-    }
-    if (!foundOrd) {
-        fprintf(stderr, "Expected \"max\" or \"min\" in the acceptance name\n");
-        return 101;
-    }
-    if (!foundRes) {
-        fprintf(stderr, "Expected \"even\" or \"odd\" in the acceptance name\n");
-        return 102;
-    }
-    // (2) the automaton should be deterministic, complete, colored
-    bool det = false;
-    bool complete = false;
-    bool colored = false;
-    for (StringList* prop = data->properties; prop != NULL; prop = prop->next) {
-        if (strcmp(prop->str, "deterministic") == 0)
-            det = true;
-        if (strcmp(prop->str, "complete") == 0)
-            complete = true;
-        if (strcmp(prop->str, "colored") == 0)
-            colored = true;
-    }
-    if (!det) {
-        fprintf(stderr, "Expected a deterministic automaton, "
-                        "did not find \"deterministic\" in the properties\n");
-        return 200;
-    }
-    if (!complete) {
-        fprintf(stderr, "Expected a complete automaton, "
-                        "did not find \"complete\" in the properties\n");
-        return 201;
-    }
-    if (!colored) {
-        fprintf(stderr, "Expected one acceptance set per transition, "
-                        "did not find \"colored\" in the properties\n");
-        return 202;
-    }
-    // (3) the automaton should have a unique start state
-    if (data->start == NULL || data->start->next != NULL) {
-        fprintf(stderr, "Expected a unique start state\n");
-        return 300;
-    }
+    // A few semantic checks! essentially, the automaton should be
+    // good to be used as a game specification
+    bool isMaxParity;
+    short resGoodPriority;
+    ret = isParityGFG(&data, &isMaxParity, &resGoodPriority);
+    if (ret != 0)
+        return ret;
 
     // Step 1: prepare a list of all uncontrollable inputs
-    int numUcntAPs = data->noAPs;
-    for (IntList* c = data->cntAPs; c != NULL; c = c->next)
-        numUcntAPs--;
+    int numUcntAPs = data.noAPs - data.noCntAPs;
     int ucntAPs[numUcntAPs];
     int apIdx = 0;
-    for (int i = 0; i < data->noAPs; i++) {
+    for (int i = 0; i < data.noAPs; i++) {
         bool found = false;
-        for (IntList* c = data->cntAPs; c != NULL; c = c->next) {
-            if (i == c->i) {
+        for (int j = 0; j < data.noCntAPs; j++) {
+            if (i == data.cntAPs[i]) {
                 found = true;
                 break;
             }
@@ -282,25 +235,24 @@ int main(int argc, char* argv[]) {
     // NOTE: states retain their index while "intermediate" state-valuation
     // vertices receive new indices
     const unsigned numValuations = (1 << numUcntAPs);
-    int nextIndex = data->noStates;
+    int nextIndex = data.noStates;
     // we need to store vertices and edges somehow:
-    PGSVertices* states = initPGSVertices(data->noStates);
+    PGSVertices* states = initPGSVertices(data.noStates);
     PGSVertices* curState = states;
-    PGSVertices* partVals = initPGSVertices(data->noStates * numValuations);
+    PGSVertices* partVals = initPGSVertices(data.noStates * numValuations);
     PGSVertices* curPartVal = partVals;
     PGSVertices* fullVals = NULL;
     PGSVertices* curFullVal = NULL;
-    for (StateList* state = data->states; state != NULL;
-         state = state->next) {
+    for (int i = 0; i < data.noStates; i++) {
+        State* state = &(data.states[i]);
         int firstSucc = nextIndex;
         nextIndex += numValuations;
         for (unsigned value = 0; value < numValuations; value++) {
             IntList* validVals = NULL;
-            for (TransList* trans = state->transitions;
-                 trans != NULL; trans = trans->next) {
+            for (int j = 0; j < state->noTrans; j++) {
+                Transition* trans = &(state->transitions[j]);
                 // there should be a single successor per transition
-                assert(trans->successors != NULL &&
-                       trans->successors->next == NULL);
+                assert(trans->noSucc == 1);
                 // there should be a label at state or transition level
                 BTree* label;
                 if (state->label != NULL)
@@ -309,20 +261,23 @@ int main(int argc, char* argv[]) {
                     label = trans->label;
                 assert(label != NULL);
                 // there should be a priority at state or transition level
-                IntList* acc = state->accSig;
-                if (state->accSig == NULL)
+                int* acc = state->accSig;
+                int noAcc = state->noAccSig;
+                if (state->accSig == NULL) {
                     acc = trans->accSig;
+                    noAcc = trans->noAccSig;
+                }
                 // one of the two should be non-NULL
                 // and there should be exactly one acceptance set!
-                assert(acc != NULL && acc->next == NULL);
-                int priority = adjustPriority(acc->i, maxPriority, winRes,
-                                              data->noAccSets);
+                assert(acc != NULL && noAcc == 1);
+                int priority = adjustPriority(acc[0], isMaxParity, resGoodPriority,
+                                              data.noAccSets);
                 // we add a vertex + edges if the transition is compatible with the
                 // valuation we are currently considering; because of PGSolver
                 // format we add only the leaving edge to a state and defer
                 // edges to it (from partial valuations) to later
-                int evald = evalLabel(label, data->aliases, numUcntAPs,
-                                      ucntAPs, value);
+                int evald = evalLabel(label, data.aliases, data.noAliases,
+                                      numUcntAPs, ucntAPs, value);
 #ifndef NDEBUG
                 fprintf(stderr, "Called evalLabel for value %d with "
                                 "%d uncontrollable APs; got %d\n",
@@ -348,7 +303,7 @@ int main(int argc, char* argv[]) {
                     curFullVal->owner = 0;
                     curFullVal->name = NULL;
                     curFullVal->next = NULL;
-                    curFullVal->successors = prependIntNode(NULL, trans->successors->i);
+                    curFullVal->successors = prependIntNode(NULL, trans->successors[0]);
                     // we also keep it as a list for the successors of the
                     // partial value
                     validVals = prependIntNode(validVals, fval);
@@ -389,7 +344,7 @@ int main(int argc, char* argv[]) {
     printPGSVertices(fullVals);
 
     // Free dynamic memory
-    deleteHoa(data);
+    resetHoa(&data);
     deletePGSVertices(states);
     deletePGSVertices(partVals);
     deletePGSVertices(fullVals);

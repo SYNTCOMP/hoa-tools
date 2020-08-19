@@ -299,25 +299,27 @@ static inline int or(AigTable* table, int op1, int op2) {
     return -1 * and(table, -1 * op1, -1 * op2);
 }
 
-static int label2aig(AigTable* aig, BTree* label, AliasList* aliases) {
+static int label2aig(AigTable* aig, BTree* label, Alias* aliases,
+                     int noAliases) {
     assert(label != NULL);
     switch (label->type) {
         case NT_BOOL:
             return label->id ? 1 : -1;  // 0 becomes -1 like this
         case NT_AND:
-            return and(aig, label2aig(aig, label->left, aliases),
-                            label2aig(aig, label->right, aliases));
+            return and(aig, label2aig(aig, label->left, aliases, noAliases),
+                            label2aig(aig, label->right, aliases, noAliases));
         case NT_OR:
-            return or(aig, label2aig(aig, label->left, aliases),
-                           label2aig(aig, label->right, aliases));
+            return or(aig, label2aig(aig, label->left, aliases, noAliases),
+                           label2aig(aig, label->right, aliases, noAliases));
         case NT_NOT:
-            return -1 * label2aig(aig, label->left, aliases);
+            return -1 * label2aig(aig, label->left, aliases, noAliases);
         case NT_AP:
             return label->id + 2;  // FIXME: make this a global constant instead?
         case NT_ALIAS:
-            for (AliasList* a = aliases; a != NULL; a = a->next) {
-                if (strcmp(a->alias, label->alias) == 0)
-                    return label2aig(aig, a->labelExpr, aliases);
+            for (int i = 0; i < noAliases; i++) {
+                if (strcmp(aliases[i].alias, label->alias) == 0)
+                    return label2aig(aig, aliases[i].labelExpr,
+                                     aliases, noAliases);
             }
             break;
         default:
@@ -330,82 +332,19 @@ static int label2aig(AigTable* aig, BTree* label, AliasList* aliases) {
  * graphs, then use A. Biere's AIGER to dump the graph
  */
 int main(int argc, char* argv[]) {
-    HoaData* data = malloc(sizeof(HoaData));
-    defaultsHoa(data);
-    int ret = parseHoa(stdin, data);
+    HoaData data;
+    defaultsHoa(&data);
+    int ret = parseHoa(stdin, &data);
     // 0 means everything was parsed correctly
     if (ret != 0)
         return ret;
-    // A few semantic checks! TODO: use checkParityGFG function instead
-    // (1) the automaton should be a parity one
-    if (strcmp(data->accNameID, "parity") != 0) {
-        fprintf(stderr, "Expected \"parity...\" automaton, found \"%s\" "
-                        "as automaton type\n", data->accNameID);
-        return 100;
-    }
-    bool foundOrd = false;
-    bool maxPriority;
-    bool foundRes = false;
-    short winRes;
-    for (StringList* param = data->accNameParameters; param != NULL;
-            param = param->next) {
-        if (strcmp(param->str, "max") == 0) {
-            maxPriority = true;
-            foundOrd = true;
-        }
-        if (strcmp(param->str, "min") == 0) {
-            maxPriority = false;
-            foundOrd = true;
-        }
-        if (strcmp(param->str, "even") == 0) {
-            winRes = 0;
-            foundRes = true;
-        }
-        if (strcmp(param->str, "odd") == 0) {
-            winRes = 1;
-            foundRes = true;
-        }
-    }
-    if (!foundOrd) {
-        fprintf(stderr, "Expected \"max\" or \"min\" in the acceptance name\n");
-        return 101;
-    }
-    if (!foundRes) {
-        fprintf(stderr, "Expected \"even\" or \"odd\" in the acceptance name\n");
-        return 102;
-    }
-    // (2) the automaton should be deterministic, complete, colored
-    bool det = false;
-    bool complete = false;
-    bool colored = false;
-    for (StringList* prop = data->properties; prop != NULL; prop = prop->next) {
-        if (strcmp(prop->str, "deterministic") == 0)
-            det = true;
-        if (strcmp(prop->str, "complete") == 0)
-            complete = true;
-        if (strcmp(prop->str, "colored") == 0)
-            colored = true;
-    }
-    if (!det) {
-        fprintf(stderr, "Expected a deterministic automaton, "
-                        "did not find \"deterministic\" in the properties\n");
-        return 200;
-    }
-    if (!complete) {
-        fprintf(stderr, "Expected a complete automaton, "
-                        "did not find \"complete\" in the properties\n");
-        return 201;
-    }
-    if (!colored) {
-        fprintf(stderr, "Expected one acceptance set per transition, "
-                        "did not find \"colored\" in the properties\n");
-        return 202;
-    }
-    // (3) the automaton should have a unique start state
-    if (data->start == NULL || data->start->next != NULL) {
-        fprintf(stderr, "Expected a unique start state\n");
-        return 300;
-    }
+    // A few semantic checks! essentially, the automaton should be
+    // good to be used as a game specification
+    bool isMaxParity;
+    short resGoodPriority;
+    ret = isParityGFG(&data, &isMaxParity, &resGoodPriority);
+    if (ret != 0)
+        return ret;
 
     // We now encode the transition relation into our
     // "sorta unique" AIG symbol table
@@ -417,19 +356,19 @@ int main(int argc, char* argv[]) {
     // (1) one per input + an extra input we will introduce
     // (2) one per latch needed for the states + 2 extra that we will need to
     // simulate eventual safety via safety + one per "good" acceptance set
-    int noInputs = data->noAPs + 1;
+    int noInputs = data.noAPs + 1;
     andGates.nextVar += noInputs;
     // we need floor(lg(#states)) + 1 just for the states,
     // where lg is the logarithm base 2; but C only has
     // natural logarithms
-    int goodAccSets = (int) (ceil(data->noAccSets / 2.0));
-    int noLatches = (int) (log(data->noStates) / log(2.0)) + 3 + goodAccSets;
+    int goodAccSets = (int) (ceil(data.noAccSets / 2.0));
+    int noLatches = (int) (log(data.noStates) / log(2.0)) + 3 + goodAccSets;
     andGates.nextVar += noLatches;
 #ifndef NDEBUG
     fprintf(stderr, "Reserved %d variables for %d inputs\n",
             noInputs, noInputs);
     fprintf(stderr, "Reserved %d variables for latches to encode %d states\n",
-            noLatches, data->noStates);
+            noLatches, data.noStates);
     fprintf(stderr, "of them, %d are for good acceptance sets\n", goodAccSets);
 #endif
 
@@ -437,15 +376,15 @@ int main(int argc, char* argv[]) {
     // successor via the transition, and add (i.e. logical or in place)
     // the transition
     // Step 1: set up state encodings
-    int statecode[data->noStates];
-    for (int i = 0; i < data->noStates; i++)
+    int statecode[data.noStates];
+    for (int i = 0; i < data.noStates; i++)
         statecode[i] = 1;
     // AIGER assumes 0 is the initial state, so we need to give the start
     // state the right latch valuation
-    int start = data->start->i;
+    int start = data.start[0];
     int nextId = 1;
-    int stateIds[data->noStates];
-    for (int src = 0; src < data->noStates; src++) {
+    int stateIds[data.noStates];
+    for (int src = 0; src < data.noStates; src++) {
         // Step 1.1: create the encoding of the source state based on the
         // binary encoding of its number
         int mask = 1;
@@ -469,37 +408,40 @@ int main(int argc, char* argv[]) {
     int predecessors[noLatches];
     for (int i = 0; i < noLatches; i++)
         predecessors[i] = -1;
-    int acceptance[data->noAccSets];
-    for (int i = 0; i < data->noAccSets; i++)
+    int acceptance[data.noAccSets];
+    for (int i = 0; i < data.noAccSets; i++)
         acceptance[i] = -1;
     // Step 3: traverse the list of successors to update the latter
-    for (StateList* src = data->states; src != NULL; src = src->next) {
+    for (int i = 0; i < data.noStates; i++) {
+        State* src = &(data.states[i]);
         bool labelled = false;
         int labelCode;
         if (src->label != NULL) {
-            labelCode = label2aig(&andGates, src->label, data->aliases);
+            labelCode = label2aig(&andGates, src->label, data.aliases,
+                                  data.noAliases);
             labelled = true;
         }
 
-        for (TransList* trans = src->transitions; trans != NULL;
-                                                  trans = trans->next) {
+        for (int j = 0; j < src->noTrans; j++) {
+            Transition* trans = &(src->transitions[j]);
             if (!labelled) {
                 if (trans->label == NULL) {
                     fprintf(stderr, "Cannot determine the label of a transition from state "
                                     "%d\n", src->id);
                     return 400;
                 }
-                labelCode = label2aig(&andGates, trans->label, data->aliases);
+                labelCode = label2aig(&andGates, trans->label, data.aliases,
+                                      data.noAliases);
             }
             int noSuccessors = 0;
-            for (IntList* tgt = trans->successors; tgt != NULL;
-                                                   tgt = tgt->next) {
+            for (int k = 0; k < trans->noSucc; k++) {
+                int tgt = trans->successors[k];
                 int transCode = and(&andGates,
                                     labelCode,
                                     statecode[src->id]);
                 int mask = 1;
                 for (int latch = 0; latch < noLatches - 2 - goodAccSets; latch++) {
-                    if ((stateIds[tgt->i] & mask) == mask) {
+                    if ((stateIds[tgt] & mask) == mask) {
                         // Step 3.1: for each latch which should be set to 1
                         // for this successor, we update its predecessor
                         // relation
@@ -511,13 +453,16 @@ int main(int argc, char* argv[]) {
                 noSuccessors++;
                 // Step 3.2: we update the acceptance sets' functions based on
                 // the transition and its acceptance sets
-                IntList* acc = src->accSig;
-                if (src->accSig == NULL)
+                int* acc = src->accSig;
+                int noAcc = src->noAccSig;
+                if (src->accSig == NULL) {
                     acc = trans->accSig;
+                    noAcc = trans->noAccSig;
+                }
                 // one of the two should be non-NULL
                 // and there should be exactly one acceptance set!
-                assert(acc != NULL && acc->next == NULL);
-                acceptance[acc->i] = or(&andGates, acceptance[acc->i], transCode);
+                assert(acc != NULL && noAccSig == 1);
+                acceptance[acc[0]] = or(&andGates, acceptance[acc[0]], transCode);
             }
             // since the automaton is supposedly deterministic, we should only
             // see one successor per transition
@@ -550,15 +495,15 @@ int main(int argc, char* argv[]) {
                                    loseState);
     // Step 5: we prepare the logic for the justice conditions based on the type
     // of parity condition
-    // NOTE: winRes = 1 for odd parity conditions, winRes = 0 otherwise
+    // NOTE: resGoodPriority = 1 for odd parity conditions, 0 otherwise
     int safeResetLatch = noLatches - goodAccSets;
-    for (int p = 1 - winRes; p < data->noAccSets; p += 2) {
+    for (int p = 1 - resGoodPriority; p < data.noAccSets; p += 2) {
         int trumpP = -1;
-        // NOTE: maxPriority = true iff we have a max priority condition
-        int q = maxPriority ? p + 1 : p - 1;
-        while (q >= 0 && q < data->noAccSets) {
+        // NOTE: isMaxParity = true iff we have a max priority condition
+        int q = isMaxParity ? p + 1 : p - 1;
+        while (q >= 0 && q < data.noAccSets) {
             trumpP = or(&andGates, trumpP, acceptance[q]);
-            q += maxPriority ? 2 : -2;
+            q += isMaxParity ? 2 : -2;
         }
         int safeResetVar = 2 + noInputs + safeResetLatch;
         predecessors[safeResetLatch] = or(&andGates, safeResetVar,
@@ -576,8 +521,8 @@ int main(int argc, char* argv[]) {
     aiger* aig = aiger_init();
     // add inputs
     int lit = 2;
-    for (StringList* aps = data->aps; aps != NULL; aps = aps->next) {
-        aiger_add_input(aig, lit, aps->str);
+    for (int i = 0; i < data.noAPs; i++) {
+        aiger_add_input(aig, lit, data.aps[i]);
         lit += 2;
     }
     // add the extra input
@@ -614,7 +559,7 @@ int main(int argc, char* argv[]) {
     // add justice constraints
     safeResetLatch = noLatches - goodAccSets;
     char justiceName[50];
-    for (int p = 1 - winRes; p < data->noAccSets; p += 2) {
+    for (int p = 1 - resGoodPriority; p < data.noAccSets; p += 2) {
         int safeResetVar = 2 + noInputs + safeResetLatch;
         unsigned justice[2] = {var2aiglit(-1 * safeResetVar),
                                var2aiglit(acceptance[p])};
@@ -638,6 +583,6 @@ int main(int argc, char* argv[]) {
     // Free dynamic memory
     aiger_reset(aig);
     deleteTree(andGates.root);
-    deleteHoa(data);
+    resetHoa(&data);
     return EXIT_SUCCESS;
 }
