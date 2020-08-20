@@ -272,13 +272,16 @@ void printHoa(const HoaData* data) {
 }
 
 static bool checkAccNode(BTree* acc, bool good, int priority) {
+    assert(acc != NULL);
     BTree* node = acc;
-    if (!good && acc->type != NT_FIN) return false;
-    if (good && acc->type != NT_INF) return false;
-    assert(acc->left != NULL);
-    node = acc->left;
-    if (acc->type != NT_SET) return false;
-    if (acc->id != priority) return false;
+
+    // work with node only now
+    if (!good && node->type != NT_FIN) return false;
+    if (good && node->type != NT_INF) return false;
+    assert(node->left != NULL);
+    node = node->left;
+    if (node->type != NT_SET) return false;
+    if (node->id != priority) return false;
     return true;
 }
 
@@ -289,10 +292,15 @@ static bool checkAccName(BTree* acc, int lastPriority, bool isMaxParity,
     bool good = curPriority % 2 == resGoodPriority;
 
     // base case
-    if (curPriority == 0 || curPriority == lastPriority - 1)
+    if ((isMaxParity && curPriority == 0)
+        || (!isMaxParity && curPriority == lastPriority - 1)) {
+        fprintf(stderr, "Base case!\n");
         return checkAccNode(acc, good, curPriority);
+    }
 
     // otherwise we need to call the function recursively
+    if (good && acc->type != NT_OR) return false;
+    if (!good && acc->type != NT_AND) return false;
     bool checkLeft = checkAccNode(acc->left, good, curPriority);
     int nextPriority = isMaxParity ? curPriority - 1 : curPriority + 1;
     bool checkRight = checkAccName(acc->right, lastPriority, isMaxParity,
@@ -339,7 +347,7 @@ int isParityGFG(const HoaData* data, bool* isMaxParity, short* resGoodPriority) 
         return 102;
     }
     if (!checkAccName(data->acc, data->noAccSets, *isMaxParity, *resGoodPriority,
-                      isMaxParity ? data->noAccSets - 1 : 0)) {
+                      (*isMaxParity) ? data->noAccSets - 1 : 0)) {
         fprintf(stderr, "Mismatch with canonical acceptance spec. for parity\n");
         return 103;
     }

@@ -34,16 +34,16 @@ int main(int argc, char* argv[]) {
 
     if (ret != 0)
         return ret;
+
+#ifndef NDEBUG
+    printHoa(&data);
+#endif
     
     bool isMaxParity;
     short resGoodPriority;
     ret = isParityGFG(&data, &isMaxParity, &resGoodPriority);
     if (ret != 0)
         return ret;
-
-#ifndef NDEBUG
-    printHoa(&data);
-#endif
 
     resetHoa(&data);
     return EXIT_SUCCESS;

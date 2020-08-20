@@ -16,6 +16,9 @@ hoa2pg: $(SRCS) $(HDRS) hoa2pg.c
 hoacheck: $(SRCS) $(HDRS) hoacheck.c
 	$(CC) $(CFLAGS) -o hoacheck $(SRCS) hoacheck.c
 
+hoaprint: $(SRCS) $(HDRS) hoacheck.c
+	$(CC) $(DBGFLAGS) -o hoaprint $(SRCS) hoacheck.c
+
 # The parser is flex + bison based, everything is generated from
 # hoa.l and hoa.y, the tokenizer and parser specifications
 hoalexer.c: hoa.l hoaparser.c hoaparser.h
@@ -29,6 +32,6 @@ hoaparser.c: hoa.y
 clean:
 	rm -f hoalexer.h hoalexer.c
 	rm -f hoaparser.h hoaparser.c
-	rm -f hoa2aig hoacheck hoa2pg
+	rm -f hoa2aig hoacheck hoa2pg hoaprint
 
-all: hoa2aig hoa2pg hoacheck
+all: hoa2aig hoa2pg hoacheck hoaprint
