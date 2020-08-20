@@ -31,4 +31,4 @@ clean:
 	rm -f hoaparser.h hoaparser.c
 	rm -f hoa2aig hoacheck hoa2pg
 
-all: hoa2aig hoa2pg
+all: hoa2aig hoa2pg hoacheck
