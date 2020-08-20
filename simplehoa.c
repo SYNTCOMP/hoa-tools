@@ -293,10 +293,8 @@ static bool checkAccName(BTree* acc, int lastPriority, bool isMaxParity,
 
     // base case
     if ((isMaxParity && curPriority == 0)
-        || (!isMaxParity && curPriority == lastPriority - 1)) {
-        fprintf(stderr, "Base case!\n");
+        || (!isMaxParity && curPriority == lastPriority - 1))
         return checkAccNode(acc, good, curPriority);
-    }
 
     // otherwise we need to call the function recursively
     if (good && acc->type != NT_OR) return false;
