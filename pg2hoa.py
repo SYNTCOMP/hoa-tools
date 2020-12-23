@@ -11,13 +11,13 @@ def hoaAccSign(priority):
     rec[0] = "Inf(0)"
     for p in range(1, priority):
         if p % 2 == 0:
-            rec[p] = f"(Inf({p}) & {rec[p - 1]})"
+            rec[p] = f"(Inf({p}) | {rec[p - 1]})"
         else:
-            rec[p] = f"(Fin({p}) | {rec[p - 1]})"
+            rec[p] = f"(Fin({p}) & {rec[p - 1]})"
     if priority % 2 == 0:
-        return f"Inf({priority}) & {rec[priority - 1]}"
+        return f"Inf({priority}) | {rec[priority - 1]}"
     else:
-        return f"Fin({priority}) | {rec[priority - 1]}"
+        return f"Fin({priority}) & {rec[priority - 1]}"
 
 
 class ParityGame:
