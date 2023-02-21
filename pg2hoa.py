@@ -63,7 +63,6 @@ class ParityGame:
                 self.maxpriority = max(self.maxpriority,
                                        self.prio[idx])
                 self.owner[idx] = int(vtxInfo[2])
-                print(vtxInfo[3])
                 self.succ[idx] = [int(s) for s in vtxInfo[3].split(',')]
                 self.maxoutdeg = max(self.maxoutdeg,
                                      len(self.succ[idx]))
