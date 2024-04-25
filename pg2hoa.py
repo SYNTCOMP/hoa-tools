@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import math
+import re
 import sys
 
 
@@ -31,9 +32,15 @@ class ParityGame:
         # let's get to reading that file then
         header = True
         for line in f.readlines():
+            # some string treatment here
+            # (1) check lines end with semicolon, and remove it
             scolon = line.find(';')
             assert(scolon > -1)
             line = line[:scolon]
+            # (2) replace commas followed by spaces and use comma only for
+            # convenience
+            line = re.sub(",\s*", ",", line)
+            # now we can continue
             if header:
                 header = False
                 hdrItems = line.split()
