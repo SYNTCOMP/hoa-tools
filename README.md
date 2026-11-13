@@ -55,6 +55,13 @@ safety.)
 * If you are modifying the parser, you will need _Flex_ and _Bison_ or similar
   tools.
 
+## Tests
+With Clang, Flex, Bison, and Python 3 installed, run `make && make test`.
+Run `make asan && make test` to rebuild with AddressSanitizer and
+UndefinedBehaviorSanitizer. Tests use an 8 MiB stack limit and Python's standard
+library only. To test binaries built elsewhere, run `./tests/run.sh /path/to/bin`.
+After a sanitizer build, use `make -B` to rebuild with the normal flags.
+
 # Citing
 If you use HOA tools for your academic work, please cite the report regarding
 the extended HOA format. For the translation to PGSolver format from HOA,

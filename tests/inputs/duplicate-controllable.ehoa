@@ -1,0 +1,12 @@
+HOA: v1
+States: 1
+Start: 0
+AP: 3 "request" "grant" "cancel"
+controllable-AP: 1 1
+acc-name: parity max even 1
+Acceptance: 1 Inf(0)
+properties: deterministic complete colored
+--BODY--
+State: 0
+[t] 0 {0}
+--END--

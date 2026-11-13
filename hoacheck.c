@@ -32,8 +32,10 @@ int main(int argc, char* argv[]) {
     defaultsHoa(&data);
     int ret = parseHoa(stdin, &data);
 
-    if (ret != 0)
+    if (ret != 0) {
+        resetHoa(&data);
         return ret;
+    }
 
 #ifndef NDEBUG
     printHoa(&data);
@@ -42,8 +44,10 @@ int main(int argc, char* argv[]) {
     bool isMaxParity;
     short resGoodPriority;
     ret = isParityGFG(&data, &isMaxParity, &resGoodPriority);
-    if (ret != 0)
+    if (ret != 0) {
+        resetHoa(&data);
         return ret;
+    }
 
     resetHoa(&data);
     return EXIT_SUCCESS;

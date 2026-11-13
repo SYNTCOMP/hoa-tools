@@ -674,6 +674,23 @@ int parseHoa(FILE* input, HoaData* data) {
                 "do not match (%d vs %d)\n", noAPs, loadedData->noAPs);
         semanticError = true;
     }
+    for (IntList* it = tempCntAPs; it != NULL; it = it->next) {
+        if (it->i < 0 || it->i >= loadedData->noAPs) {
+            fprintf(stderr,
+                    "Semantic error: controllable-AP index %d is outside [0, %d)\n",
+                    it->i, loadedData->noAPs);
+            semanticError = true;
+        }
+        for (IntList* other = it->next; other != NULL; other = other->next) {
+            if (it->i == other->i) {
+                fprintf(stderr,
+                        "Semantic error: duplicate controllable-AP index %d\n",
+                        it->i);
+                semanticError = true;
+                break;
+            }
+        }
+    }
 
     // clean up internal handy elements
     loadedData->aps = simplifyStrList(tempAps, &(loadedData->noAPs));

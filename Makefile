@@ -5,7 +5,7 @@ HDRS = hoalexer.h hoaparser.h simplehoa.h
 SRCS = hoalexer.c hoaparser.c simplehoa.c
 
 CFLAGS = -O3 -DNDEBUG
-DBGFLAGS = -fsanitize=address -fno-omit-frame-pointer -g
+DBGFLAGS = -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -g
 
 all: hoa2aig hoa2pg hoacheck hoaprint
 
@@ -29,7 +29,13 @@ hoalexer.c: hoa.l hoaparser.c hoaparser.h
 hoaparser.c: hoa.y
 	bison --defines --output=hoaparser.c hoa.y
 
-.PHONY: clean all
+.PHONY: clean all asan test
+
+asan:
+	$(MAKE) -B CFLAGS="-O0 -DNDEBUG $(DBGFLAGS)" all
+
+test: all
+	./tests/run.sh
 
 clean:
 	rm -f hoalexer.h hoalexer.c

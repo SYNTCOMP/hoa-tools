@@ -1,0 +1,19 @@
+name: Tests
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y clang flex bison python3
+      - name: Build all tools
+        run: make
+      - name: Run tests
+        run: make test
+      - name: Build with AddressSanitizer and UndefinedBehaviorSanitizer
+        run: make asan
+      - name: Run sanitizer tests
+        run: make test
