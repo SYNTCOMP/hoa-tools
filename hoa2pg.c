@@ -215,7 +215,7 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < data.noAPs; i++) {
         bool found = false;
         for (int j = 0; j < data.noCntAPs; j++) {
-            if (i == data.cntAPs[i]) {
+            if (i == data.cntAPs[j]) {
                 found = true;
                 break;
             }
