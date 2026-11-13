@@ -65,7 +65,7 @@ aiger_version (void)
     size_t nbytes = (n) * sizeof (*(p)); \
     size_t minbytes = (mbytes < nbytes) ? mbytes : nbytes; \
     void * res = private->malloc_callback (private->memory_mgr, nbytes); \
-    memcpy (res, (p), minbytes); \
+    if (minbytes) memcpy (res, (p), minbytes); \
     if (nbytes > mbytes) \
       memset (((char*)res) + mbytes, 0, nbytes - mbytes); \
     private->free_callback (private->memory_mgr, (p), mbytes); \
@@ -904,20 +904,23 @@ aiger_check (aiger * public)
 }
 
 static int
-aiger_default_get (FILE * file)
+aiger_default_get (void *state)
 {
+  FILE *file = state;
   return getc (file);
 }
 
 static int
-aiger_default_put (char ch, FILE * file)
+aiger_default_put (char ch, void *state)
 {
+  FILE *file = state;
   return putc ((unsigned char) ch, file);
 }
 
 static int
-aiger_string_put (char ch, aiger_buffer * buffer)
+aiger_string_put (char ch, void *state)
 {
+  aiger_buffer *buffer = state;
   if (buffer->cursor == buffer->end)
     return EOF;
   *buffer->cursor++ = ch;
@@ -1223,7 +1226,7 @@ int
 aiger_write_symbols_to_file (aiger * public, FILE * file)
 {
   assert (!aiger_error (public));
-  return aiger_write_symbols (public, file, (aiger_put) aiger_default_put);
+  return aiger_write_symbols (public, file, aiger_default_put);
 }
 
 static int
@@ -1247,7 +1250,7 @@ int
 aiger_write_comments_to_file (aiger * public, FILE * file)
 {
   assert (!aiger_error (public));
-  return aiger_write_comments (public, file, (aiger_put) aiger_default_put);
+  return aiger_write_comments (public, file, aiger_default_put);
 }
 
 static int
@@ -1789,7 +1792,7 @@ aiger_write_to_file (aiger * public, aiger_mode mode, FILE * file)
 {
   assert (!aiger_error (public));
   return aiger_write_generic (public,
-			      mode, file, (aiger_put) aiger_default_put);
+			      mode, file, aiger_default_put);
 }
 
 int
@@ -1804,7 +1807,7 @@ aiger_write_to_string (aiger * public, aiger_mode mode, char *str, size_t len)
   buffer.cursor = str;
   buffer.end = str + len;
   res = aiger_write_generic (public,
-			     mode, &buffer, (aiger_put) aiger_string_put);
+			     mode, &buffer, aiger_string_put);
 
   if (!res)
     return 0;
@@ -2572,7 +2575,7 @@ const char *
 aiger_read_from_file (aiger * public, FILE * file)
 {
   assert (!aiger_error (public));
-  return aiger_read_generic (public, file, (aiger_get) aiger_default_get);
+  return aiger_read_generic (public, file, aiger_default_get);
 }
 
 const char *

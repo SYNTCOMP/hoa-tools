@@ -336,15 +336,19 @@ int main(int argc, char* argv[]) {
     defaultsHoa(&data);
     int ret = parseHoa(stdin, &data);
     // 0 means everything was parsed correctly
-    if (ret != 0)
+    if (ret != 0) {
+        resetHoa(&data);
         return ret;
+    }
     // A few semantic checks! essentially, the automaton should be
     // good to be used as a game specification
     bool isMaxParity;
     short resGoodPriority;
     ret = isParityGFG(&data, &isMaxParity, &resGoodPriority);
-    if (ret != 0)
+    if (ret != 0) {
+        resetHoa(&data);
         return ret;
+    }
 
     // We now encode the transition relation into our
     // "sorta unique" AIG symbol table

@@ -70,19 +70,18 @@ static PGSVertices* initPGSVertices(size_t amount) {
 }
 
 static void deletePGSVertices(PGSVertices* u) {
-    if (u == NULL)
-        return;
-    PGSVertices* v = u->next;
-    if (u->name != NULL)
-        free(u->name);
-    IntList* succ = u->successors;
-    while (succ != NULL) {
-        IntList* temp = succ->next;
-        free(succ);
-        succ = temp;
+    while (u != NULL) {
+        PGSVertices* v = u->next;
+        // Vertex names are borrowed from HoaData.
+        IntList* succ = u->successors;
+        while (succ != NULL) {
+            IntList* temp = succ->next;
+            free(succ);
+            succ = temp;
+        }
+        free(u);
+        u = v;
     }
-    free(u);
-    deletePGSVertices(v);
 }
 
 static void printPGSVertices(PGSVertices* vlist) {
@@ -198,19 +197,23 @@ int main(int argc, char* argv[]) {
     defaultsHoa(&data);
     int ret = parseHoa(stdin, &data);
     // 0 means everything was parsed correctly
-    if (ret != 0)
+    if (ret != 0) {
+        resetHoa(&data);
         return ret;
+    }
     // A few semantic checks! essentially, the automaton should be
     // good to be used as a game specification
     bool isMaxParity;
     short resGoodPriority;
     ret = isParityGFG(&data, &isMaxParity, &resGoodPriority);
-    if (ret != 0)
+    if (ret != 0) {
+        resetHoa(&data);
         return ret;
+    }
 
     // Step 1: prepare a list of all uncontrollable inputs
     int numUcntAPs = data.noAPs - data.noCntAPs;
-    int ucntAPs[numUcntAPs];
+    int ucntAPs[numUcntAPs > 0 ? numUcntAPs : 1];
     int apIdx = 0;
     for (int i = 0; i < data.noAPs; i++) {
         bool found = false;
